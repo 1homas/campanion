@@ -1,0 +1,20 @@
+# Environment variables
+.env
+
+# OpenAPI 
+openapiSpec.json
+
+# Cache
+.cache/
+.pytest_cache/
+__pycache__/
+
+# Testing
+.pytest_cache/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store

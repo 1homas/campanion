@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(curl:*)",
+      "Bash(jq:*)",
+      "Bash(node:*)",
+      "Bash(prettier:*)",
+      "Bash(uv:*)",
+      "Bash(source .env)",
+      "Bash(node:*)"
+    ],
+    "deny": [
+      "Bash(rm *)"
+    ]
+  }
+}
