@@ -48,7 +48,6 @@ Required in `~/AI/skills/campanion/.env`:
 MERAKI_DASHBOARD_API_KEY=<api-key>
 MERAKI_ORG_ID=<org-id>
 MERAKI_BASE_URL=https://api.meraki.com/api/v1  # optional
-MERAKI_CACHE_TTL=604800                         # optional, seconds
 MERAKI_TIMEOUT=30                               # optional, HTTP timeout in seconds
 ```
 
@@ -63,10 +62,11 @@ MERAKI_TIMEOUT=30                               # optional, HTTP timeout in seco
 ### Sessions
 
 ```bash
-# List session history (default 24h)
+# List session history (default 1 hour)
 scripts/campanion.py sessions
 scripts/campanion.py sessions --timespan 604800        # 7 days
-scripts/campanion.py sessions --timespan 86400 --refresh  # bypass cache
+scripts/campanion.py sessions --timespan 86400 --pretty  # formatted output
+scripts/campanion.py sessions --limit 100              # limit to 100 results
 
 # Count sessions by status
 scripts/campanion.py count-sessions
@@ -74,6 +74,7 @@ scripts/campanion.py count-sessions --timespan 604800
 
 # List failed sessions with failure details
 scripts/campanion.py failed-sessions
+scripts/campanion.py failed-sessions --timespan 86400 --pretty
 
 # Get details for a specific session
 scripts/campanion.py session-details <session-uuid>
@@ -103,18 +104,17 @@ scripts/campanion.py delete-rule <policy-id> <rule-id>
 ```bash
 # List certificates
 scripts/campanion.py certificates
-scripts/campanion.py certificates --status Enabled
-scripts/campanion.py certificates --expiry --last-used
+scripts/campanion.py certificates --status valid
+scripts/campanion.py certificates --expiry --last-used --pretty
 
 # Certificate overview (counts)
 scripts/campanion.py certificates-overview
 
 # Import a certificate
-scripts/campanion.py import-certificate --contents "-----BEGIN CERTIFICATE-----..." --dry-run
-scripts/campanion.py import-certificate --contents "..." --profile '{"enabled":true}'
+scripts/campanion.py import-certificate --body '{"certificate":"-----BEGIN CERTIFICATE-----..."}'
 
 # Update certificate config
-scripts/campanion.py update-certificate <cert-id> --body '{"profile":{"enabled":true}}'
+scripts/campanion.py update-certificate <cert-id> --body '{"enabled":true}'
 ```
 
 ### CRLs
@@ -122,14 +122,15 @@ scripts/campanion.py update-certificate <cert-id> --body '{"profile":{"enabled":
 ```bash
 # List CRLs
 scripts/campanion.py crls
-scripts/campanion.py crls --sort-by createdAt --sort-order desc
+scripts/campanion.py crls --sort-by caId --sort-order desc
+scripts/campanion.py crls --ca-ids "ca1,ca2" --pretty
 
 # List CRL descriptors (metadata only)
 scripts/campanion.py crl-descriptors
+scripts/campanion.py crl-descriptors --ca-ids "ca1,ca2"
 
 # Create CRL
-scripts/campanion.py create-crl --ca-id <ca-id> --content "-----BEGIN X509 CRL-----..."
-scripts/campanion.py create-crl --ca-id <ca-id> --content "..." --is-delta
+scripts/campanion.py create-crl --body '{"caId":"<ca-id>","crl":"-----BEGIN X509 CRL-----..."}'
 
 # Delete CRL
 scripts/campanion.py delete-crl <crl-id>
@@ -140,25 +141,27 @@ scripts/campanion.py delete-crl <crl-id>
 ```bash
 # List all clients
 scripts/campanion.py clients
-scripts/campanion.py clients --refresh
+scripts/campanion.py clients --search "laptop" --sort-key lastLogin
+scripts/campanion.py clients --group-ids "g1,g2" --limit 50
+scripts/campanion.py clients --ssid "Corporate" --pretty
 
 # Get clients overview (counts)
 scripts/campanion.py clients-overview
 
 # Create a client
-scripts/campanion.py create-client --body '{"name":"...", "mac":"AA:BB:CC:DD:EE:FF", ...}'
+scripts/campanion.py create-client --body '{"mac":"AA:BB:CC:DD:EE:FF","description":"Printer"}'
 
 # Update a client
-scripts/campanion.py update-client <client-id> --body '{"name":"...", ...}'
+scripts/campanion.py update-client <client-id> --body '{"description":"Updated name"}'
 
 # Bulk delete clients
 scripts/campanion.py bulk-delete-clients --body '{"clientIds":["id1","id2"]}'
 
 # Bulk edit clients
-scripts/campanion.py bulk-edit-clients --body '{"items":[{"clientId":"...", "name":"..."}]}'
+scripts/campanion.py bulk-edit-clients --body '{"items":[{"clientId":"...","description":"..."}]}'
 
-# Bulk upload clients (with groups and associations)
-scripts/campanion.py bulk-upload-clients --body '{"items":[...]}'
+# Bulk upload clients
+scripts/campanion.py bulk-upload-clients --body '{"items":[{"mac":"...","description":"..."}]}'
 ```
 
 ### Client Groups
@@ -166,12 +169,14 @@ scripts/campanion.py bulk-upload-clients --body '{"items":[...]}'
 ```bash
 # List all client groups
 scripts/campanion.py client-groups
+scripts/campanion.py client-groups --search "printer" --sort-key name
+scripts/campanion.py client-groups --group-ids "g1,g2" --pretty
 
 # Create a client group
-scripts/campanion.py create-client-group --body '{"name":"...", ...}'
+scripts/campanion.py create-client-group --body '{"name":"Printers","description":"All printers"}'
 
-# Update a client group (with bulk member operations)
-scripts/campanion.py update-client-group <group-id> --body '{"name":"...", "members":{...}}'
+# Update a client group
+scripts/campanion.py update-client-group <group-id> --body '{"description":"Updated description"}'
 
 # Delete a client group
 scripts/campanion.py delete-client-group <group-id>
@@ -182,21 +187,24 @@ scripts/campanion.py delete-client-group <group-id>
 ```bash
 # List dictionaries
 scripts/campanion.py dictionaries
+scripts/campanion.py dictionaries --pretty
 
 # List attributes for a dictionary
 scripts/campanion.py dictionary-attributes <dictionary-id>
+scripts/campanion.py dictionary-attributes <dictionary-id> --network-ids "net1,net2"
 
 # Search attribute values
 scripts/campanion.py attribute-values <dictionary-id> <attribute-name> --search "query"
+scripts/campanion.py attribute-values <dictionary-id> <attribute-name> --network-ids "net1,net2" --pretty
 ```
 
 ### License
 
 ```bash
-# License usage (default: last 7 days)
+# License usage
 scripts/campanion.py license-usage
-scripts/campanion.py license-usage --days 30
 scripts/campanion.py license-usage --start-date 2026-01-01 --end-date 2026-03-31
+scripts/campanion.py license-usage --network-ids "net1,net2" --pretty
 ```
 
 ### Generic API (any Meraki Dashboard endpoint)
@@ -204,48 +212,53 @@ scripts/campanion.py license-usage --start-date 2026-01-01 --end-date 2026-03-31
 ```bash
 # List networks
 scripts/campanion.py api GET /organizations/{organizationId}/networks
+scripts/campanion.py api GET /organizations/{organizationId}/networks --pretty
 
-# List devices with pagination
+# List devices with parameters
 scripts/campanion.py api GET /organizations/{organizationId}/devices --params '{"perPage":100}'
+scripts/campanion.py api GET /organizations/{organizationId}/devices --params '{"productTypes":["switch"]}' --limit 50
 
 # Get a specific network
 scripts/campanion.py api GET /networks/{networkId}
 
-# List switches in the org
-scripts/campanion.py api GET /organizations/{organizationId}/devices --params '{"productTypes[]":"switch"}'
-
 # Get all ports on a switch
-scripts/campanion.py api GET /devices/Q5VA-W6VM-BXLX/switch/ports
+scripts/campanion.py api GET /devices/Q5VA-W6VM-BXLX/switch/ports --pretty
 
 # Shut a switch port (disable)
-scripts/campanion.py api PUT /devices/Q5VA-W6VM-BXLX/switch/ports/5 --body '{"enabled": false}'
+scripts/campanion.py api PUT /devices/Q5VA-W6VM-BXLX/switch/ports/5 --body '{"enabled":false}'
 
 # No-shut a switch port (enable)
-scripts/campanion.py api PUT /devices/Q5VA-W6VM-BXLX/switch/ports/5 --body '{"enabled": true}'
+scripts/campanion.py api PUT /devices/Q5VA-W6VM-BXLX/switch/ports/5 --body '{"enabled":true}'
 
 # Any POST/PUT/DELETE
-scripts/campanion.py api POST /organizations/{organizationId}/nac/clients --body '{"name":"test"}'
+scripts/campanion.py api POST /organizations/{organizationId}/nac/clients --body '{"mac":"AA:BB:CC:DD:EE:FF"}'
 ```
 
-The `api` command auto-substitutes `{organizationId}` with `MERAKI_ORG_ID`. All other path parameters (e.g., `{networkId}`) must be supplied as literal values. GET responses are cached; write operations are not.
+The `api` command auto-substitutes `{organizationId}` with `MERAKI_ORG_ID`. All other path parameters (e.g., `{networkId}`) must be supplied as literal values.
 
 All scripts are run with `uv run --directory ~/AI/skills/campanion/scripts`.
 
 ### Global Options
 
+All GET commands support these options:
+
+- `--pretty` — Pretty-print JSON with 2-space indents (default is compact JSON for piping)
+- `--limit <n>` — Maximum number of items to return (caps pagination)
+- `--per-page <n>` — Results per page (varies by endpoint, default typically 1000)
+- `--starting-after <index>` — Pagination start index (integer, 0-based)
+- `--ending-before <index>` — Pagination end index (integer, 0-based)
+
+**Automatic pagination**: All GET requests fetch all pages by default. Use `--limit` to cap results.
+
 ```bash
-# Compact JSON (no indent) — pipe-friendly
-scripts/campanion.py --raw sessions
-scripts/campanion.py --raw count-sessions | jq .total
+# Compact JSON (default) — pipe-friendly
+scripts/campanion.py sessions | jq '.items | length'
+scripts/campanion.py count-sessions | jq .
 
-# Bypass cache on any GET command
-scripts/campanion.py sessions --refresh
-scripts/campanion.py policies --refresh
+# Pretty-printed JSON for human readability
+scripts/campanion.py sessions --pretty
+scripts/campanion.py clients --limit 100 --pretty
 ```
-
-## Caching
-
-API responses are cached in `.cache/` for 7 days (configurable via `MERAKI_CACHE_TTL` env var, in seconds). Write operations (create/update/delete) automatically invalidate related cache entries.
 
 ## API Lessons Learned
 

@@ -14,7 +14,6 @@ Cisco Access Manager (CAM) CLI for Meraki Dashboard REST APIs.
 Provides operational management of NAC endpoints and generic API access.
 """
 
-import hashlib
 import json
 import os
 import sys
@@ -34,16 +33,11 @@ load_dotenv(PROJECT_ROOT / ".env")
 API_KEY = os.getenv("MERAKI_DASHBOARD_API_KEY")
 ORG_ID = os.getenv("MERAKI_ORG_ID")
 BASE_URL = os.getenv("MERAKI_BASE_URL", "https://api.meraki.com/api/v1")
-CACHE_TTL = int(os.getenv("MERAKI_CACHE_TTL", "604800"))  # 7 days
 TIMEOUT = int(os.getenv("MERAKI_TIMEOUT", "30"))
-
-# Cache directory
-CACHE_DIR = PROJECT_ROOT / ".cache"
-CACHE_DIR.mkdir(exist_ok=True)
 
 
 class APIClient:
-    """Meraki Dashboard API client with caching."""
+    """Meraki Dashboard API client."""
 
     def __init__(self, api_key: str, org_id: str, base_url: str):
         self.api_key = api_key
@@ -51,60 +45,17 @@ class APIClient:
         self.base_url = base_url.rstrip("/")
         self.client = httpx.Client(timeout=TIMEOUT)
 
-    def _get_cache_key(self, method: str, path: str, params: Optional[dict]) -> str:
-        """Generate cache key from request parameters."""
-        key_data = f"{method}:{path}:{json.dumps(params or {}, sort_keys=True)}"
-        return hashlib.sha256(key_data.encode()).hexdigest()
 
-    def _get_cached_response(self, cache_key: str) -> Optional[dict]:
-        """Retrieve cached response if valid."""
-        cache_file = CACHE_DIR / f"{cache_key}.json"
-        if not cache_file.exists():
-            return None
-
-        import time
-
-        if time.time() - cache_file.stat().st_mtime > CACHE_TTL:
-            cache_file.unlink()
-            return None
-
-        return json.loads(cache_file.read_text())
-
-    def _cache_response(self, cache_key: str, data: dict) -> None:
-        """Cache response data."""
-        cache_file = CACHE_DIR / f"{cache_key}.json"
-        cache_file.write_text(json.dumps(data))
-
-    def _invalidate_cache(self, path_prefix: str) -> None:
-        """Invalidate cache entries matching path prefix."""
-        for cache_file in CACHE_DIR.glob("*.json"):
-            cache_file.unlink()
-
-    def request(
+    def _make_single_request(
         self,
         method: str,
         path: str,
         params: Optional[dict] = None,
         body: Optional[dict] = None,
-        refresh: bool = False,
     ) -> dict:
-        """Make API request with caching for GET requests."""
-        # Substitute {organizationId} in path
-        path = path.replace("{organizationId}", self.org_id)
-
-        # Ensure path starts with /
-        if not path.startswith("/"):
-            path = f"/{path}"
-
+        """Make a single API request without pagination."""
         url = f"{self.base_url}{path}"
         headers = {"X-Cisco-Meraki-API-Key": self.api_key}
-
-        # Check cache for GET requests
-        if method.upper() == "GET" and not refresh:
-            cache_key = self._get_cache_key(method, path, params)
-            cached = self._get_cached_response(cache_key)
-            if cached is not None:
-                return cached
 
         # Make request
         try:
@@ -124,17 +75,99 @@ class APIClient:
             sys.exit(1)
 
         data = response.json() if response.text else {}
-
-        # Cache GET responses
-        if method.upper() == "GET":
-            cache_key = self._get_cache_key(method, path, params)
-            self._cache_response(cache_key, data)
-
-        # Invalidate cache for write operations
-        if method.upper() in ("POST", "PUT", "DELETE"):
-            self._invalidate_cache(path)
-
         return data
+
+    def request(
+        self,
+        method: str,
+        path: str,
+        params: Optional[dict] = None,
+        body: Optional[dict] = None,
+        limit: Optional[int] = None,
+    ) -> dict:
+        """Make API request."""
+        # Substitute {organizationId} in path
+        path = path.replace("{organizationId}", self.org_id)
+
+        # Ensure path starts with /
+        if not path.startswith("/"):
+            path = f"/{path}"
+
+        # Handle pagination for GET requests (always enabled)
+        if method.upper() == "GET":
+            return self._paginated_request(path, params, limit)
+
+        # For non-GET requests, make single request
+        return self._make_single_request(method, path, params, body)
+
+    def _apply_limit(self, data: dict, limit: int) -> dict:
+        """Apply limit to response data."""
+        if isinstance(data, list):
+            return data[:limit]
+        elif isinstance(data, dict) and "items" in data:
+            return {"items": data["items"][:limit], "total": len(data["items"][:limit])}
+        return data
+
+    def _paginated_request(self, path: str, params: Optional[dict], limit: Optional[int] = None) -> dict:
+        """Fetch all pages for a paginated GET request using integer-based startingAfter."""
+        all_items = []
+        current_params = params.copy() if params else {}
+
+        # Set max page size if not specified
+        if "perPage" not in current_params:
+            current_params["perPage"] = 1000
+
+        # Remove endingBefore if present (incompatible with pagination)
+        if "endingBefore" in current_params:
+            del current_params["endingBefore"]
+
+        page_index = 0
+
+        while True:
+            # Set startingAfter to current index if not first page
+            if page_index > 0:
+                current_params["startingAfter"] = str(page_index)
+
+            data = self._make_single_request("GET", path, current_params, None)
+
+            # Handle different response formats
+            if isinstance(data, list):
+                all_items.extend(data)
+                page_index += len(data)
+
+                # Check if limit reached
+                if limit is not None and len(all_items) >= limit:
+                    all_items = all_items[:limit]
+                    break
+
+                # If we got fewer items than perPage, we're done
+                if len(data) < current_params.get("perPage", 1000):
+                    break
+                if not data:
+                    break
+            elif isinstance(data, dict) and "items" in data:
+                items = data.get("items", [])
+                all_items.extend(items)
+                page_index += len(items)
+
+                # Check if limit reached
+                if limit is not None and len(all_items) >= limit:
+                    all_items = all_items[:limit]
+                    break
+
+                # If we got fewer items than perPage, we're done
+                if len(items) < current_params.get("perPage", 1000):
+                    break
+                if not items:
+                    break
+            else:
+                # Non-paginated response
+                return data
+
+        # Return in same format as API
+        if isinstance(data, dict) and "items" in data:
+            return {"items": all_items, "total": len(all_items)}
+        return all_items
 
 
 def get_client() -> APIClient:
@@ -149,12 +182,12 @@ def get_client() -> APIClient:
     return APIClient(API_KEY, ORG_ID, BASE_URL)
 
 
-def output_json(data: Any, raw: bool = False) -> None:
+def output_json(data: Any, pretty: bool = False) -> None:
     """Output JSON data with optional formatting."""
-    if raw:
-        click.echo(json.dumps(data, separators=(",", ":")))
-    else:
+    if pretty:
         click.echo(json.dumps(data, indent=2))
+    else:
+        click.echo(json.dumps(data, separators=(",", ":")))
 
 
 @click.group(cls=DefaultGroup, default="api", default_if_no_args=False)
@@ -174,17 +207,17 @@ def cli(ctx):
 @click.argument("path")
 @click.option("--params", help="Query parameters as JSON")
 @click.option("--body", help="Request body as JSON")
-@click.option("--refresh", is_flag=True, help="Bypass cache for GET requests")
-@click.option("--raw", is_flag=True, help="Compact JSON output")
-def api(method: str, path: str, params: Optional[str], body: Optional[str], refresh: bool, raw: bool):
+@click.option("--limit", type=int, help="Maximum number of items to return")
+@click.option("--pretty", is_flag=True, help="Pretty-print JSON with 2-space indents")
+def api(method: str, path: str, params: Optional[str], body: Optional[str], limit: Optional[int], pretty: bool):
     """Make a generic API call to any Meraki Dashboard endpoint."""
     client = get_client()
 
     params_dict = json.loads(params) if params else None
     body_dict = json.loads(body) if body else None
 
-    result = client.request(method, path, params=params_dict, body=body_dict, refresh=refresh)
-    output_json(result, raw)
+    result = client.request(method, path, params=params_dict, body=body_dict, limit=limit)
+    output_json(result, pretty)
 
 
 # ============================================================================
@@ -196,13 +229,13 @@ def api(method: str, path: str, params: Optional[str], body: Optional[str], refr
 @click.option("--t0", help="Beginning of timespan (ISO8601 format or Unix timestamp). Max lookback: 31 days")
 @click.option("--timespan", type=int, help="Timespan in seconds (max 2678400 = 31 days). Default: 3600 (1 hour)")
 @click.option("--per-page", type=int, help="Entries per page (3-1000). Default: 1000")
-@click.option("--starting-after", help="Pagination token for next page")
-@click.option("--ending-before", help="Pagination token for previous page")
-@click.option("--refresh", is_flag=True, help="Bypass cache")
-@click.option("--raw", is_flag=True, help="Compact JSON output")
+@click.option("--starting-after", type=int, help="Start index for pagination (integer, 0-based)")
+@click.option("--ending-before", type=int, help="End index for pagination (integer, 0-based)")
+@click.option("--limit", type=int, help="Maximum number of items to return")
+@click.option("--pretty", is_flag=True, help="Pretty-print JSON with 2-space indents")
 def sessions(t0: Optional[str], timespan: Optional[int], per_page: Optional[int],
-             starting_after: Optional[str], ending_before: Optional[str],
-             refresh: bool, raw: bool):
+             starting_after: Optional[int], ending_before: Optional[int],
+             limit: Optional[int], pretty: bool):
     """List NAC session history."""
     client = get_client()
 
@@ -219,27 +252,25 @@ def sessions(t0: Optional[str], timespan: Optional[int], per_page: Optional[int]
         params["endingBefore"] = ending_before
 
     result = client.request("GET", f"/organizations/{ORG_ID}/nac/sessions/history",
-                           params=params if params else None, refresh=refresh)
-    output_json(result, raw)
+                           params=params if params else None, limit=limit)
+    output_json(result, pretty)
 
 
 @cli.command()
 @click.argument("session_id")
-@click.option("--refresh", is_flag=True, help="Bypass cache")
-@click.option("--raw", is_flag=True, help="Compact JSON output")
-def session_details(session_id: str, refresh: bool, raw: bool):
+@click.option("--pretty", is_flag=True, help="Pretty-print JSON with 2-space indents")
+def session_details(session_id: str, pretty: bool):
     """Get NAC session details."""
     client = get_client()
-    result = client.request("GET", f"/organizations/{ORG_ID}/nac/sessions/{session_id}/details", refresh=refresh)
-    output_json(result, raw)
+    result = client.request("GET", f"/organizations/{ORG_ID}/nac/sessions/{session_id}/details")
+    output_json(result, pretty)
 
 
 @cli.command()
 @click.option("--t0", help="Beginning of timespan (ISO8601 format or Unix timestamp). Max lookback: 31 days")
 @click.option("--timespan", type=int, help="Timespan in seconds (max 2678400 = 31 days). Default: 3600 (1 hour)")
-@click.option("--refresh", is_flag=True, help="Bypass cache")
-@click.option("--raw", is_flag=True, help="Compact JSON output")
-def count_sessions(t0: Optional[str], timespan: Optional[int], refresh: bool, raw: bool):
+@click.option("--pretty", is_flag=True, help="Pretty-print JSON with 2-space indents")
+def count_sessions(t0: Optional[str], timespan: Optional[int], pretty: bool):
     """Count sessions by status."""
     client = get_client()
 
@@ -250,7 +281,7 @@ def count_sessions(t0: Optional[str], timespan: Optional[int], refresh: bool, ra
         params["timespan"] = timespan
 
     result = client.request("GET", f"/organizations/{ORG_ID}/nac/sessions/history",
-                           params=params if params else None, refresh=refresh)
+                           params=params if params else None)
 
     # Aggregate by status
     counts = {}
@@ -258,15 +289,14 @@ def count_sessions(t0: Optional[str], timespan: Optional[int], refresh: bool, ra
         status = session.get("status", "unknown")
         counts[status] = counts.get(status, 0) + 1
 
-    output_json(counts, raw)
+    output_json(counts, pretty)
 
 
 @cli.command()
 @click.option("--t0", help="Beginning of timespan (ISO8601 format or Unix timestamp). Max lookback: 31 days")
 @click.option("--timespan", type=int, help="Timespan in seconds (max 2678400 = 31 days). Default: 3600 (1 hour)")
-@click.option("--refresh", is_flag=True, help="Bypass cache")
-@click.option("--raw", is_flag=True, help="Compact JSON output")
-def failed_sessions(t0: Optional[str], timespan: Optional[int], refresh: bool, raw: bool):
+@click.option("--pretty", is_flag=True, help="Pretty-print JSON with 2-space indents")
+def failed_sessions(t0: Optional[str], timespan: Optional[int], pretty: bool):
     """List failed sessions with reasons."""
     client = get_client()
 
@@ -277,7 +307,7 @@ def failed_sessions(t0: Optional[str], timespan: Optional[int], refresh: bool, r
         params["timespan"] = timespan
 
     result = client.request("GET", f"/organizations/{ORG_ID}/nac/sessions/history",
-                           params=params if params else None, refresh=refresh)
+                           params=params if params else None)
 
     # Filter failed sessions
     failed = [s for s in result.get("items", []) if s.get("status") == "failed"]
@@ -292,9 +322,8 @@ def failed_sessions(t0: Optional[str], timespan: Optional[int], refresh: bool, r
 
 @cli.command()
 @click.option("--policy-ids", help="Comma-separated list of policy IDs to retrieve")
-@click.option("--refresh", is_flag=True, help="Bypass cache")
-@click.option("--raw", is_flag=True, help="Compact JSON output")
-def policies(policy_ids: Optional[str], refresh: bool, raw: bool):
+@click.option("--pretty", is_flag=True, help="Pretty-print JSON with 2-space indents")
+def policies(policy_ids: Optional[str], pretty: bool):
     """List authorization policies."""
     client = get_client()
 
@@ -303,18 +332,17 @@ def policies(policy_ids: Optional[str], refresh: bool, raw: bool):
         params["policyIds"] = policy_ids.split(",")
 
     result = client.request("GET", f"/organizations/{ORG_ID}/nac/authorization/policies",
-                           params=params if params else None, refresh=refresh)
-    output_json(result, raw)
+                           params=params if params else None)
+    output_json(result, pretty)
 
 
 @cli.command()
 @click.argument("policy_id")
-@click.option("--refresh", is_flag=True, help="Bypass cache")
-@click.option("--raw", is_flag=True, help="Compact JSON output")
-def rules(policy_id: str, refresh: bool, raw: bool):
+@click.option("--pretty", is_flag=True, help="Pretty-print JSON with 2-space indents")
+def rules(policy_id: str, pretty: bool):
     """List rules for an authorization policy."""
     client = get_client()
-    result = client.request("GET", f"/organizations/{ORG_ID}/nac/authorization/policies", refresh=refresh)
+    result = client.request("GET", f"/organizations/{ORG_ID}/nac/authorization/policies")
 
     # Filter to specific policy
     for policy in result.get("items", []):
@@ -329,37 +357,37 @@ def rules(policy_id: str, refresh: bool, raw: bool):
 @cli.command()
 @click.argument("policy_id")
 @click.option("--body", required=True, help="Rule body as JSON")
-@click.option("--raw", is_flag=True, help="Compact JSON output")
-def create_rule(policy_id: str, body: str, raw: bool):
+@click.option("--pretty", is_flag=True, help="Pretty-print JSON with 2-space indents")
+def create_rule(policy_id: str, body: str, pretty: bool):
     """Create authorization rule."""
     client = get_client()
     body_dict = json.loads(body)
     result = client.request("POST", f"/organizations/{ORG_ID}/nac/authorization/policies/{policy_id}/rules", body=body_dict)
-    output_json(result, raw)
+    output_json(result, pretty)
 
 
 @cli.command()
 @click.argument("policy_id")
 @click.argument("rule_id")
 @click.option("--body", required=True, help="Rule body as JSON")
-@click.option("--raw", is_flag=True, help="Compact JSON output")
-def update_rule(policy_id: str, rule_id: str, body: str, raw: bool):
+@click.option("--pretty", is_flag=True, help="Pretty-print JSON with 2-space indents")
+def update_rule(policy_id: str, rule_id: str, body: str, pretty: bool):
     """Update authorization rule."""
     client = get_client()
     body_dict = json.loads(body)
     result = client.request("PUT", f"/organizations/{ORG_ID}/nac/authorization/policies/{policy_id}/rules/{rule_id}", body=body_dict)
-    output_json(result, raw)
+    output_json(result, pretty)
 
 
 @cli.command()
 @click.argument("policy_id")
 @click.argument("rule_id")
-@click.option("--raw", is_flag=True, help="Compact JSON output")
-def delete_rule(policy_id: str, rule_id: str, raw: bool):
+@click.option("--pretty", is_flag=True, help="Pretty-print JSON with 2-space indents")
+def delete_rule(policy_id: str, rule_id: str, pretty: bool):
     """Delete authorization rule."""
     client = get_client()
     result = client.request("DELETE", f"/organizations/{ORG_ID}/nac/authorization/policies/{policy_id}/rules/{rule_id}")
-    output_json(result, raw)
+    output_json(result, pretty)
 
 
 # ============================================================================
@@ -371,9 +399,8 @@ def delete_rule(policy_id: str, rule_id: str, raw: bool):
 @click.option("--status", type=click.Choice(["valid", "expiring", "expired"]), help="Filter by certificate status")
 @click.option("--expiry", is_flag=True, help="Filter certificates expiring within one month")
 @click.option("--last-used", is_flag=True, help="Filter certificates not used in over one month")
-@click.option("--refresh", is_flag=True, help="Bypass cache")
-@click.option("--raw", is_flag=True, help="Compact JSON output")
-def certificates(status: Optional[str], expiry: bool, last_used: bool, refresh: bool, raw: bool):
+@click.option("--pretty", is_flag=True, help="Pretty-print JSON with 2-space indents")
+def certificates(status: Optional[str], expiry: bool, last_used: bool, pretty: bool):
     """List certificates."""
     client = get_client()
 
@@ -386,56 +413,55 @@ def certificates(status: Optional[str], expiry: bool, last_used: bool, refresh: 
         params["lastUsed"] = True
 
     result = client.request("GET", f"/organizations/{ORG_ID}/nac/certificates",
-                           params=params if params else None, refresh=refresh)
-    output_json(result, raw)
+                           params=params if params else None)
+    output_json(result, pretty)
 
 
 @cli.command()
-@click.option("--refresh", is_flag=True, help="Bypass cache")
-@click.option("--raw", is_flag=True, help="Compact JSON output")
-def certificates_overview(refresh: bool, raw: bool):
+@click.option("--pretty", is_flag=True, help="Pretty-print JSON with 2-space indents")
+def certificates_overview(pretty: bool):
     """Get certificate counts."""
     client = get_client()
-    result = client.request("GET", f"/organizations/{ORG_ID}/nac/certificates/overview", refresh=refresh)
-    output_json(result, raw)
+    result = client.request("GET", f"/organizations/{ORG_ID}/nac/certificates/overview")
+    output_json(result, pretty)
 
 
 @cli.command()
 @click.option("--body", required=True, help="Certificate body as JSON")
-@click.option("--raw", is_flag=True, help="Compact JSON output")
-def import_certificate(body: str, raw: bool):
+@click.option("--pretty", is_flag=True, help="Pretty-print JSON with 2-space indents")
+def import_certificate(body: str, pretty: bool):
     """Import certificate."""
     client = get_client()
     body_dict = json.loads(body)
     result = client.request("POST", f"/organizations/{ORG_ID}/nac/certificates/import", body=body_dict)
-    output_json(result, raw)
+    output_json(result, pretty)
 
 
 @cli.command()
 @click.argument("certificate_id")
 @click.option("--body", required=True, help="Certificate config as JSON")
-@click.option("--raw", is_flag=True, help="Compact JSON output")
-def update_certificate(certificate_id: str, body: str, raw: bool):
+@click.option("--pretty", is_flag=True, help="Pretty-print JSON with 2-space indents")
+def update_certificate(certificate_id: str, body: str, pretty: bool):
     """Update certificate configuration."""
     client = get_client()
     body_dict = json.loads(body)
     result = client.request("PUT", f"/organizations/{ORG_ID}/nac/certificates/{certificate_id}", body=body_dict)
-    output_json(result, raw)
+    output_json(result, pretty)
 
 
 @cli.command()
 @click.option("--per-page", type=int, help="Entries per page (3-20). Default: 20")
-@click.option("--starting-after", help="Pagination token for next page")
-@click.option("--ending-before", help="Pagination token for previous page")
+@click.option("--starting-after", type=int, help="Start index for pagination (integer, 0-based)")
+@click.option("--ending-before", type=int, help="End index for pagination (integer, 0-based)")
 @click.option("--sort-by", type=click.Choice(["caId"]), help="Field to sort by. Default: caId")
 @click.option("--sort-order", type=click.Choice(["asc", "desc"]), help="Sort order. Default: asc")
 @click.option("--crl-ids", help="Comma-separated list of CRL IDs to filter")
 @click.option("--ca-ids", help="Comma-separated list of CA IDs to filter")
-@click.option("--refresh", is_flag=True, help="Bypass cache")
-@click.option("--raw", is_flag=True, help="Compact JSON output")
-def crls(per_page: Optional[int], starting_after: Optional[str], ending_before: Optional[str],
+@click.option("--limit", type=int, help="Maximum number of items to return")
+@click.option("--pretty", is_flag=True, help="Pretty-print JSON with 2-space indents")
+def crls(per_page: Optional[int], starting_after: Optional[int], ending_before: Optional[int],
          sort_by: Optional[str], sort_order: Optional[str], crl_ids: Optional[str], ca_ids: Optional[str],
-         refresh: bool, raw: bool):
+         limit: Optional[int], pretty: bool):
     """List CRLs."""
     client = get_client()
 
@@ -456,22 +482,22 @@ def crls(per_page: Optional[int], starting_after: Optional[str], ending_before: 
         params["caIds"] = ca_ids.split(",")
 
     result = client.request("GET", f"/organizations/{ORG_ID}/nac/certificates/authorities/crls",
-                           params=params if params else None, refresh=refresh)
-    output_json(result, raw)
+                           params=params if params else None, limit=limit)
+    output_json(result, pretty)
 
 
 @cli.command()
 @click.option("--per-page", type=int, help="Entries per page (3-100). Default: 100")
-@click.option("--starting-after", help="Pagination token for next page")
-@click.option("--ending-before", help="Pagination token for previous page")
+@click.option("--starting-after", type=int, help="Start index for pagination (integer, 0-based)")
+@click.option("--ending-before", type=int, help="End index for pagination (integer, 0-based)")
 @click.option("--sort-by", type=click.Choice(["caId"]), help="Field to sort by. Default: caId")
 @click.option("--sort-order", type=click.Choice(["asc", "desc"]), help="Sort order. Default: asc")
 @click.option("--ca-ids", help="Comma-separated list of CA IDs to filter")
-@click.option("--refresh", is_flag=True, help="Bypass cache")
-@click.option("--raw", is_flag=True, help="Compact JSON output")
-def crl_descriptors(per_page: Optional[int], starting_after: Optional[str], ending_before: Optional[str],
+@click.option("--limit", type=int, help="Maximum number of items to return")
+@click.option("--pretty", is_flag=True, help="Pretty-print JSON with 2-space indents")
+def crl_descriptors(per_page: Optional[int], starting_after: Optional[int], ending_before: Optional[int],
                     sort_by: Optional[str], sort_order: Optional[str], ca_ids: Optional[str],
-                    refresh: bool, raw: bool):
+                    limit: Optional[int], pretty: bool):
     """Get CRL metadata."""
     client = get_client()
 
@@ -490,29 +516,29 @@ def crl_descriptors(per_page: Optional[int], starting_after: Optional[str], endi
         params["caIds"] = ca_ids.split(",")
 
     result = client.request("GET", f"/organizations/{ORG_ID}/nac/certificates/authorities/crls/descriptors",
-                           params=params if params else None, refresh=refresh)
-    output_json(result, raw)
+                           params=params if params else None, limit=limit)
+    output_json(result, pretty)
 
 
 @cli.command()
 @click.option("--body", required=True, help="CRL body as JSON")
-@click.option("--raw", is_flag=True, help="Compact JSON output")
-def create_crl(body: str, raw: bool):
+@click.option("--pretty", is_flag=True, help="Pretty-print JSON with 2-space indents")
+def create_crl(body: str, pretty: bool):
     """Create CRL."""
     client = get_client()
     body_dict = json.loads(body)
     result = client.request("POST", f"/organizations/{ORG_ID}/nac/certificates/authorities/crls", body=body_dict)
-    output_json(result, raw)
+    output_json(result, pretty)
 
 
 @cli.command()
 @click.argument("crl_id")
-@click.option("--raw", is_flag=True, help="Compact JSON output")
-def delete_crl(crl_id: str, raw: bool):
+@click.option("--pretty", is_flag=True, help="Pretty-print JSON with 2-space indents")
+def delete_crl(crl_id: str, pretty: bool):
     """Delete CRL."""
     client = get_client()
     result = client.request("DELETE", f"/organizations/{ORG_ID}/nac/certificates/authorities/crls/{crl_id}")
-    output_json(result, raw)
+    output_json(result, pretty)
 
 
 # ============================================================================
@@ -524,20 +550,20 @@ def delete_crl(crl_id: str, raw: bool):
 @click.option("--sort-order", type=click.Choice(["asc", "desc"]), help="Sort direction")
 @click.option("--sort-key", help="Field to sort by (e.g., mac, description, lastLogin)")
 @click.option("--per-page", type=int, help="Entries per page (3-1000). Default: 1000")
-@click.option("--starting-after", help="Pagination token for next page")
-@click.option("--ending-before", help="Pagination token for previous page")
+@click.option("--starting-after", type=int, help="Start index for pagination (integer, 0-based)")
+@click.option("--ending-before", type=int, help="End index for pagination (integer, 0-based)")
 @click.option("--search", help="Fuzzy search on clients")
 @click.option("--client-ids", help="Comma-separated list of client IDs")
 @click.option("--group-ids", help="Comma-separated list of group IDs")
 @click.option("--last-network-name", help="Comma-separated list of network names")
 @click.option("--ssid", help="Comma-separated list of SSIDs")
 @click.option("--classification", help="Classification filters as JSON")
-@click.option("--refresh", is_flag=True, help="Bypass cache")
-@click.option("--raw", is_flag=True, help="Compact JSON output")
+@click.option("--limit", type=int, help="Maximum number of items to return")
+@click.option("--pretty", is_flag=True, help="Pretty-print JSON with 2-space indents")
 def clients(sort_order: Optional[str], sort_key: Optional[str], per_page: Optional[int],
-            starting_after: Optional[str], ending_before: Optional[str], search: Optional[str],
+            starting_after: Optional[int], ending_before: Optional[int], search: Optional[str],
             client_ids: Optional[str], group_ids: Optional[str], last_network_name: Optional[str],
-            ssid: Optional[str], classification: Optional[str], refresh: bool, raw: bool):
+            ssid: Optional[str], classification: Optional[str], limit: Optional[int], pretty: bool):
     """List NAC clients."""
     client = get_client()
 
@@ -566,74 +592,73 @@ def clients(sort_order: Optional[str], sort_key: Optional[str], per_page: Option
         params["classification"] = json.loads(classification)
 
     result = client.request("GET", f"/organizations/{ORG_ID}/nac/clients",
-                           params=params if params else None, refresh=refresh)
-    output_json(result, raw)
+                           params=params if params else None, limit=limit)
+    output_json(result, pretty)
 
 
 @cli.command()
-@click.option("--refresh", is_flag=True, help="Bypass cache")
-@click.option("--raw", is_flag=True, help="Compact JSON output")
-def clients_overview(refresh: bool, raw: bool):
+@click.option("--pretty", is_flag=True, help="Pretty-print JSON with 2-space indents")
+def clients_overview(pretty: bool):
     """Get client counts."""
     client = get_client()
-    result = client.request("GET", f"/organizations/{ORG_ID}/nac/clients/overview", refresh=refresh)
-    output_json(result, raw)
+    result = client.request("GET", f"/organizations/{ORG_ID}/nac/clients/overview")
+    output_json(result, pretty)
 
 
 @cli.command()
 @click.option("--body", required=True, help="Client body as JSON")
-@click.option("--raw", is_flag=True, help="Compact JSON output")
-def create_client(body: str, raw: bool):
+@click.option("--pretty", is_flag=True, help="Pretty-print JSON with 2-space indents")
+def create_client(body: str, pretty: bool):
     """Create NAC client."""
     client = get_client()
     body_dict = json.loads(body)
     result = client.request("POST", f"/organizations/{ORG_ID}/nac/clients", body=body_dict)
-    output_json(result, raw)
+    output_json(result, pretty)
 
 
 @cli.command()
 @click.argument("client_id")
 @click.option("--body", required=True, help="Client config as JSON")
-@click.option("--raw", is_flag=True, help="Compact JSON output")
-def update_client(client_id: str, body: str, raw: bool):
+@click.option("--pretty", is_flag=True, help="Pretty-print JSON with 2-space indents")
+def update_client(client_id: str, body: str, pretty: bool):
     """Update NAC client."""
     client = get_client()
     body_dict = json.loads(body)
     result = client.request("PUT", f"/organizations/{ORG_ID}/nac/clients/{client_id}", body=body_dict)
-    output_json(result, raw)
+    output_json(result, pretty)
 
 
 @cli.command()
 @click.option("--body", required=True, help="Client IDs as JSON array")
-@click.option("--raw", is_flag=True, help="Compact JSON output")
-def bulk_delete_clients(body: str, raw: bool):
+@click.option("--pretty", is_flag=True, help="Pretty-print JSON with 2-space indents")
+def bulk_delete_clients(body: str, pretty: bool):
     """Bulk delete NAC clients."""
     client = get_client()
     body_dict = json.loads(body)
     result = client.request("POST", f"/organizations/{ORG_ID}/nac/clients/bulkDelete", body=body_dict)
-    output_json(result, raw)
+    output_json(result, pretty)
 
 
 @cli.command()
 @click.option("--body", required=True, help="Bulk edit body as JSON")
-@click.option("--raw", is_flag=True, help="Compact JSON output")
-def bulk_edit_clients(body: str, raw: bool):
+@click.option("--pretty", is_flag=True, help="Pretty-print JSON with 2-space indents")
+def bulk_edit_clients(body: str, pretty: bool):
     """Bulk edit NAC clients."""
     client = get_client()
     body_dict = json.loads(body)
     result = client.request("POST", f"/organizations/{ORG_ID}/nac/clients/bulkEdit", body=body_dict)
-    output_json(result, raw)
+    output_json(result, pretty)
 
 
 @cli.command()
 @click.option("--body", required=True, help="Bulk upload body as JSON")
-@click.option("--raw", is_flag=True, help="Compact JSON output")
-def bulk_upload_clients(body: str, raw: bool):
+@click.option("--pretty", is_flag=True, help="Pretty-print JSON with 2-space indents")
+def bulk_upload_clients(body: str, pretty: bool):
     """Bulk upload NAC clients."""
     client = get_client()
     body_dict = json.loads(body)
     result = client.request("POST", f"/organizations/{ORG_ID}/nac/clients/bulkUpload", body=body_dict)
-    output_json(result, raw)
+    output_json(result, pretty)
 
 
 # ============================================================================
@@ -645,15 +670,15 @@ def bulk_upload_clients(body: str, raw: bool):
 @click.option("--sort-order", type=click.Choice(["asc", "desc"]), help="Sort direction")
 @click.option("--sort-key", help="Field to sort by (e.g., name, description)")
 @click.option("--per-page", type=int, help="Entries per page (3-1000). Default: 1000")
-@click.option("--starting-after", help="Pagination token for next page")
-@click.option("--ending-before", help="Pagination token for previous page")
+@click.option("--starting-after", type=int, help="Start index for pagination (integer, 0-based)")
+@click.option("--ending-before", type=int, help="End index for pagination (integer, 0-based)")
 @click.option("--search", help="Fuzzy search on client groups")
 @click.option("--group-ids", help="Comma-separated list of group IDs")
-@click.option("--refresh", is_flag=True, help="Bypass cache")
-@click.option("--raw", is_flag=True, help="Compact JSON output")
+@click.option("--limit", type=int, help="Maximum number of items to return")
+@click.option("--pretty", is_flag=True, help="Pretty-print JSON with 2-space indents")
 def client_groups(sort_order: Optional[str], sort_key: Optional[str], per_page: Optional[int],
-                  starting_after: Optional[str], ending_before: Optional[str], search: Optional[str],
-                  group_ids: Optional[str], refresh: bool, raw: bool):
+                  starting_after: Optional[int], ending_before: Optional[int], search: Optional[str],
+                  group_ids: Optional[str], limit: Optional[int], pretty: bool):
     """List client groups."""
     client = get_client()
 
@@ -674,41 +699,41 @@ def client_groups(sort_order: Optional[str], sort_key: Optional[str], per_page: 
         params["groupIds"] = group_ids.split(",")
 
     result = client.request("GET", f"/organizations/{ORG_ID}/nac/clients/groups",
-                           params=params if params else None, refresh=refresh)
-    output_json(result, raw)
+                           params=params if params else None, limit=limit)
+    output_json(result, pretty)
 
 
 @cli.command()
 @click.option("--body", required=True, help="Group body as JSON")
-@click.option("--raw", is_flag=True, help="Compact JSON output")
-def create_client_group(body: str, raw: bool):
+@click.option("--pretty", is_flag=True, help="Pretty-print JSON with 2-space indents")
+def create_client_group(body: str, pretty: bool):
     """Create client group."""
     client = get_client()
     body_dict = json.loads(body)
     result = client.request("POST", f"/organizations/{ORG_ID}/nac/clients/groups", body=body_dict)
-    output_json(result, raw)
+    output_json(result, pretty)
 
 
 @cli.command()
 @click.argument("group_id")
 @click.option("--body", required=True, help="Group config as JSON")
-@click.option("--raw", is_flag=True, help="Compact JSON output")
-def update_client_group(group_id: str, body: str, raw: bool):
+@click.option("--pretty", is_flag=True, help="Pretty-print JSON with 2-space indents")
+def update_client_group(group_id: str, body: str, pretty: bool):
     """Update client group."""
     client = get_client()
     body_dict = json.loads(body)
     result = client.request("PUT", f"/organizations/{ORG_ID}/nac/clients/groups/{group_id}", body=body_dict)
-    output_json(result, raw)
+    output_json(result, pretty)
 
 
 @cli.command()
 @click.argument("group_id")
-@click.option("--raw", is_flag=True, help="Compact JSON output")
-def delete_client_group(group_id: str, raw: bool):
+@click.option("--pretty", is_flag=True, help="Pretty-print JSON with 2-space indents")
+def delete_client_group(group_id: str, pretty: bool):
     """Delete client group."""
     client = get_client()
     result = client.request("DELETE", f"/organizations/{ORG_ID}/nac/clients/groups/{group_id}")
-    output_json(result, raw)
+    output_json(result, pretty)
 
 
 # ============================================================================
@@ -717,21 +742,19 @@ def delete_client_group(group_id: str, raw: bool):
 
 
 @cli.command()
-@click.option("--refresh", is_flag=True, help="Bypass cache")
-@click.option("--raw", is_flag=True, help="Compact JSON output")
-def dictionaries(refresh: bool, raw: bool):
+@click.option("--pretty", is_flag=True, help="Pretty-print JSON with 2-space indents")
+def dictionaries(pretty: bool):
     """List dictionaries."""
     client = get_client()
-    result = client.request("GET", f"/organizations/{ORG_ID}/nac/dictionaries", refresh=refresh)
-    output_json(result, raw)
+    result = client.request("GET", f"/organizations/{ORG_ID}/nac/dictionaries")
+    output_json(result, pretty)
 
 
 @cli.command()
 @click.argument("dictionary_id")
 @click.option("--network-ids", help="Comma-separated list of network IDs to filter enum values")
-@click.option("--refresh", is_flag=True, help="Bypass cache")
-@click.option("--raw", is_flag=True, help="Compact JSON output")
-def dictionary_attributes(dictionary_id: str, network_ids: Optional[str], refresh: bool, raw: bool):
+@click.option("--pretty", is_flag=True, help="Pretty-print JSON with 2-space indents")
+def dictionary_attributes(dictionary_id: str, network_ids: Optional[str], pretty: bool):
     """List dictionary attributes."""
     client = get_client()
 
@@ -740,8 +763,8 @@ def dictionary_attributes(dictionary_id: str, network_ids: Optional[str], refres
         params["networkIds"] = network_ids.split(",")
 
     result = client.request("GET", f"/organizations/{ORG_ID}/nac/dictionaries/{dictionary_id}/attributes",
-                           params=params if params else None, refresh=refresh)
-    output_json(result, raw)
+                           params=params if params else None)
+    output_json(result, pretty)
 
 
 @cli.command()
@@ -749,10 +772,9 @@ def dictionary_attributes(dictionary_id: str, network_ids: Optional[str], refres
 @click.argument("attribute_name")
 @click.option("--search", help="Search string for contains-match filtering")
 @click.option("--network-ids", help="Comma-separated list of network IDs to filter values")
-@click.option("--refresh", is_flag=True, help="Bypass cache")
-@click.option("--raw", is_flag=True, help="Compact JSON output")
+@click.option("--pretty", is_flag=True, help="Pretty-print JSON with 2-space indents")
 def attribute_values(dictionary_id: str, attribute_name: str, search: Optional[str],
-                    network_ids: Optional[str], refresh: bool, raw: bool):
+                    network_ids: Optional[str], pretty: bool):
     """Search attribute values."""
     client = get_client()
 
@@ -763,8 +785,8 @@ def attribute_values(dictionary_id: str, attribute_name: str, search: Optional[s
         params["networkIds"] = network_ids.split(",")
 
     result = client.request("GET", f"/organizations/{ORG_ID}/nac/dictionaries/{dictionary_id}/attributes/{attribute_name}/values",
-                           params=params if params else None, refresh=refresh)
-    output_json(result, raw)
+                           params=params if params else None)
+    output_json(result, pretty)
 
 
 # ============================================================================
@@ -776,10 +798,9 @@ def attribute_values(dictionary_id: str, attribute_name: str, search: Optional[s
 @click.option("--start-date", help="Start date for usage data (UTC, YYYY-MM-DD format)")
 @click.option("--end-date", help="End date for usage data (UTC, YYYY-MM-DD format)")
 @click.option("--network-ids", help="Comma-separated list of network IDs")
-@click.option("--refresh", is_flag=True, help="Bypass cache")
-@click.option("--raw", is_flag=True, help="Compact JSON output")
+@click.option("--pretty", is_flag=True, help="Pretty-print JSON with 2-space indents")
 def license_usage(start_date: Optional[str], end_date: Optional[str], network_ids: Optional[str],
-                  refresh: bool, raw: bool):
+                  pretty: bool):
     """Get license usage stats."""
     client = get_client()
 
@@ -792,8 +813,8 @@ def license_usage(start_date: Optional[str], end_date: Optional[str], network_id
         params["networkIds"] = network_ids.split(",")
 
     result = client.request("GET", f"/organizations/{ORG_ID}/nac/license/usage",
-                           params=params if params else None, refresh=refresh)
-    output_json(result, raw)
+                           params=params if params else None)
+    output_json(result, pretty)
 
 
 if __name__ == "__main__":

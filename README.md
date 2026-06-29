@@ -7,7 +7,7 @@ A Claude Code skill providing operational management of Cisco Access Manager (CA
 - **Claude Code Skill**: Invocable via `/campanion` to analyze, correlate, configure, and troubleshoot CAM deployments
 - **NAC Operations**: Manage sessions, policies, certificates, clients, and groups
 - **Meraki Dashboard Correlation**: Query networks, devices, switch ports via generic API command
-- **Smart Caching**: 7-day cache for GET requests with auto-invalidation on writes
+- **Automatic Pagination**: Fetches all pages by default for complete results
 - **Zero Setup**: Uses uv inline metadata — no venv or `pip install` needed
 
 ## Quick Start
@@ -134,14 +134,16 @@ All GET commands support REST API query parameters. Use `<command> --help` for f
 
 Common options available across GET commands:
 
-- `--refresh` — Bypass cache on GET requests
-- `--raw` — Compact JSON output (no indentation)
+- `--pretty` — Pretty-print JSON with 2-space indents (default is compact JSON)
+- `--limit <n>` — Maximum number of items to return (caps pagination)
 - `--per-page <n>` — Results per page (range varies by endpoint)
-- `--starting-after <token>` — Pagination token for next page
-- `--ending-before <token>` — Pagination token for previous page
+- `--starting-after <index>` — Pagination start index (integer, 0-based)
+- `--ending-before <index>` — Pagination end index (integer, 0-based)
 - `--sort-order <asc|desc>` — Sort direction
 - `--sort-key <field>` — Field to sort by (endpoint-specific)
 - `--search <query>` — Fuzzy search (clients, groups, attributes)
+
+**Pagination**: All GET requests automatically fetch all available pages by default. Use `--limit N` to cap results at N items.
 
 Time range options (sessions commands):
 
@@ -160,7 +162,7 @@ uv run --directory ~/AI/skills/campanion/scripts --with pytest --with respx --wi
 
 - **Single-file CLI** with `#!/usr/bin/env -S uv run` shebang and inline PEP 723 metadata (no `pyproject.toml`)
 - **Direct execution** — runs as a standalone script without `uv run` prefix
-- **Smart caching** in `.cache/` with SHA-256 keys and configurable TTL
+- **Automatic pagination** — fetches all pages by default for complete results
 - **Auto path substitution** — `{organizationId}` replaced automatically
 - **Full REST API support** — all GET commands expose their query parameters
 - **Test-driven** — comprehensive test suite with `respx` mocking (no live API calls)
@@ -177,7 +179,6 @@ uv run --directory ~/AI/skills/campanion/scripts --with pytest --with respx --wi
 | `MERAKI_DASHBOARD_API_KEY` | Yes      | —                               | API key                |
 | `MERAKI_ORG_ID`            | Yes      | —                               | Organization ID        |
 | `MERAKI_BASE_URL`          | No       | `https://api.meraki.com/api/v1` | Base API URL           |
-| `MERAKI_CACHE_TTL`         | No       | `604800`                        | Cache TTL (seconds)    |
 | `MERAKI_TIMEOUT`           | No       | `30`                            | HTTP timeout (seconds) |
 
 ## Use Cases

@@ -103,27 +103,53 @@ All GET commands support their respective REST API query parameters for filterin
 
 Most GET commands support:
 
-| Flag               | Description                                                |
-| ------------------ | ---------------------------------------------------------- |
-| `--refresh`        | Bypass cache for GET requests                              |
-| `--raw`            | Compact JSON output (no indentation)                       |
-| `--per-page`       | Results per page (varies by endpoint: 3-1000)              |
-| `--starting-after` | Pagination token for next page                             |
-| `--ending-before`  | Pagination token for previous page                         |
-| `--sort-order`     | Sort direction (`asc` or `desc`)                           |
-| `--sort-key`       | Field to sort by (varies by endpoint)                      |
-| `--search`         | Fuzzy search string (clients, groups, attribute values)    |
-| `--t0`             | Start time (ISO8601 or Unix timestamp, sessions only)      |
-| `--timespan`       | Duration in seconds (max 2678400 = 31 days, sessions only) |
+| Flag               | Description                                                      |
+| ------------------ | ---------------------------------------------------------------- |
+| `--pretty`         | Pretty-print JSON with 2-space indents (default is compact JSON) |
+| `--per-page`       | Results per page (varies by endpoint: 3-1000)                    |
+| `--starting-after` | Pagination start index (integer, 0-based)                        |
+| `--ending-before`  | Pagination end index (integer, 0-based)                          |
+| `--limit`          | Maximum number of items to return (caps pagination)              |
+| `--sort-order`     | Sort direction (`asc` or `desc`)                                 |
+| `--sort-key`       | Field to sort by (varies by endpoint)                            |
+| `--search`         | Fuzzy search string (clients, groups, attribute values)          |
+| `--t0`             | Start time (ISO8601 or Unix timestamp, sessions only)            |
+| `--timespan`       | Duration in seconds (max 2678400 = 31 days, sessions only)       |
 
 Refer to `<command> --help` for endpoint-specific options.
 
-### Caching
+### Pagination
 
-- GET responses cached in `.cache/` with SHA-256 keyed filenames
-- Default TTL: 7 days (`MERAKI_CACHE_TTL` env var, in seconds)
-- `--refresh` flag bypasses cache on any GET command
-- Write operations (POST/PUT/DELETE) auto-invalidate related cache entries
+The CLI implements **automatic pagination** for all GET requests:
+
+- `--starting-after <index>` — Start fetching from the specified integer index (0-based)
+- `--ending-before <index>` — Fetch items before the specified integer index (0-based)
+- `--limit <n>` — Maximum number of items to return (caps pagination)
+- `--per-page <n>` — Number of items per page (default varies by endpoint, typically 1000)
+
+**Pagination algorithm** (automatic for all GET requests):
+
+1. First request: fetch without `startingAfter` parameter
+2. Count items returned: `N`
+3. If `N < perPage`, stop (last page reached)
+4. Otherwise, set `startingAfter = N` and fetch next page
+5. Repeat from step 2 with cumulative index
+6. If `--limit` is specified, stop when total items >= limit
+
+**Example**: Fetching 5000 items with `--per-page 1000`:
+
+- Request 1: no `startingAfter` → returns items 0-999
+- Request 2: `startingAfter=1000` → returns items 1000-1999
+- Request 3: `startingAfter=2000` → returns items 2000-2999
+- Request 4: `startingAfter=3000` → returns items 3000-3999
+- Request 5: `startingAfter=4000` → returns items 4000-4999
+- Request 6: `startingAfter=5000` → returns 0 items (stop)
+
+### Output Format
+
+**Default output**: Compact JSON (no whitespace) for machine parsing and pipeline operations
+
+**Pretty-printed output**: Use `--pretty` flag to format JSON with 2-space indents for human readability
 
 ## Environment Variables
 
@@ -132,7 +158,6 @@ Refer to `<command> --help` for endpoint-specific options.
 | `MERAKI_DASHBOARD_API_KEY` | Yes      | —                               | API key                |
 | `MERAKI_ORG_ID`            | Yes      | —                               | Organization ID        |
 | `MERAKI_BASE_URL`          | No       | `https://api.meraki.com/api/v1` | Base API URL           |
-| `MERAKI_CACHE_TTL`         | No       | `604800`                        | Cache TTL (seconds)    |
 | `MERAKI_TIMEOUT`           | No       | `30`                            | HTTP timeout (seconds) |
 
 ## Dependencies
