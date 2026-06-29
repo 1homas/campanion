@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env -S uv run
 # /// script
 # requires-python = ">=3.11"
 # dependencies = [
@@ -193,12 +193,33 @@ def api(method: str, path: str, params: Optional[str], body: Optional[str], refr
 
 
 @cli.command()
+@click.option("--t0", help="Beginning of timespan (ISO8601 format or Unix timestamp). Max lookback: 31 days")
+@click.option("--timespan", type=int, help="Timespan in seconds (max 2678400 = 31 days). Default: 3600 (1 hour)")
+@click.option("--per-page", type=int, help="Entries per page (3-1000). Default: 1000")
+@click.option("--starting-after", help="Pagination token for next page")
+@click.option("--ending-before", help="Pagination token for previous page")
 @click.option("--refresh", is_flag=True, help="Bypass cache")
 @click.option("--raw", is_flag=True, help="Compact JSON output")
-def sessions(refresh: bool, raw: bool):
+def sessions(t0: Optional[str], timespan: Optional[int], per_page: Optional[int],
+             starting_after: Optional[str], ending_before: Optional[str],
+             refresh: bool, raw: bool):
     """List NAC session history."""
     client = get_client()
-    result = client.request("GET", f"/organizations/{ORG_ID}/nac/sessions/history", refresh=refresh)
+
+    params = {}
+    if t0:
+        params["t0"] = t0
+    if timespan:
+        params["timespan"] = timespan
+    if per_page:
+        params["perPage"] = per_page
+    if starting_after:
+        params["startingAfter"] = starting_after
+    if ending_before:
+        params["endingBefore"] = ending_before
+
+    result = client.request("GET", f"/organizations/{ORG_ID}/nac/sessions/history",
+                           params=params if params else None, refresh=refresh)
     output_json(result, raw)
 
 
@@ -214,12 +235,22 @@ def session_details(session_id: str, refresh: bool, raw: bool):
 
 
 @cli.command()
+@click.option("--t0", help="Beginning of timespan (ISO8601 format or Unix timestamp). Max lookback: 31 days")
+@click.option("--timespan", type=int, help="Timespan in seconds (max 2678400 = 31 days). Default: 3600 (1 hour)")
 @click.option("--refresh", is_flag=True, help="Bypass cache")
 @click.option("--raw", is_flag=True, help="Compact JSON output")
-def count_sessions(refresh: bool, raw: bool):
+def count_sessions(t0: Optional[str], timespan: Optional[int], refresh: bool, raw: bool):
     """Count sessions by status."""
     client = get_client()
-    result = client.request("GET", f"/organizations/{ORG_ID}/nac/sessions/history", refresh=refresh)
+
+    params = {}
+    if t0:
+        params["t0"] = t0
+    if timespan:
+        params["timespan"] = timespan
+
+    result = client.request("GET", f"/organizations/{ORG_ID}/nac/sessions/history",
+                           params=params if params else None, refresh=refresh)
 
     # Aggregate by status
     counts = {}
@@ -231,12 +262,22 @@ def count_sessions(refresh: bool, raw: bool):
 
 
 @cli.command()
+@click.option("--t0", help="Beginning of timespan (ISO8601 format or Unix timestamp). Max lookback: 31 days")
+@click.option("--timespan", type=int, help="Timespan in seconds (max 2678400 = 31 days). Default: 3600 (1 hour)")
 @click.option("--refresh", is_flag=True, help="Bypass cache")
 @click.option("--raw", is_flag=True, help="Compact JSON output")
-def failed_sessions(refresh: bool, raw: bool):
+def failed_sessions(t0: Optional[str], timespan: Optional[int], refresh: bool, raw: bool):
     """List failed sessions with reasons."""
     client = get_client()
-    result = client.request("GET", f"/organizations/{ORG_ID}/nac/sessions/history", refresh=refresh)
+
+    params = {}
+    if t0:
+        params["t0"] = t0
+    if timespan:
+        params["timespan"] = timespan
+
+    result = client.request("GET", f"/organizations/{ORG_ID}/nac/sessions/history",
+                           params=params if params else None, refresh=refresh)
 
     # Filter failed sessions
     failed = [s for s in result.get("items", []) if s.get("status") == "failed"]
@@ -250,12 +291,19 @@ def failed_sessions(refresh: bool, raw: bool):
 
 
 @cli.command()
+@click.option("--policy-ids", help="Comma-separated list of policy IDs to retrieve")
 @click.option("--refresh", is_flag=True, help="Bypass cache")
 @click.option("--raw", is_flag=True, help="Compact JSON output")
-def policies(refresh: bool, raw: bool):
+def policies(policy_ids: Optional[str], refresh: bool, raw: bool):
     """List authorization policies."""
     client = get_client()
-    result = client.request("GET", f"/organizations/{ORG_ID}/nac/authorization/policies", refresh=refresh)
+
+    params = {}
+    if policy_ids:
+        params["policyIds"] = policy_ids.split(",")
+
+    result = client.request("GET", f"/organizations/{ORG_ID}/nac/authorization/policies",
+                           params=params if params else None, refresh=refresh)
     output_json(result, raw)
 
 
@@ -320,12 +368,25 @@ def delete_rule(policy_id: str, rule_id: str, raw: bool):
 
 
 @cli.command()
+@click.option("--status", type=click.Choice(["valid", "expiring", "expired"]), help="Filter by certificate status")
+@click.option("--expiry", is_flag=True, help="Filter certificates expiring within one month")
+@click.option("--last-used", is_flag=True, help="Filter certificates not used in over one month")
 @click.option("--refresh", is_flag=True, help="Bypass cache")
 @click.option("--raw", is_flag=True, help="Compact JSON output")
-def certificates(refresh: bool, raw: bool):
+def certificates(status: Optional[str], expiry: bool, last_used: bool, refresh: bool, raw: bool):
     """List certificates."""
     client = get_client()
-    result = client.request("GET", f"/organizations/{ORG_ID}/nac/certificates", refresh=refresh)
+
+    params = {}
+    if status:
+        params["status"] = status
+    if expiry:
+        params["expiry"] = True
+    if last_used:
+        params["lastUsed"] = True
+
+    result = client.request("GET", f"/organizations/{ORG_ID}/nac/certificates",
+                           params=params if params else None, refresh=refresh)
     output_json(result, raw)
 
 
@@ -363,22 +424,73 @@ def update_certificate(certificate_id: str, body: str, raw: bool):
 
 
 @cli.command()
+@click.option("--per-page", type=int, help="Entries per page (3-20). Default: 20")
+@click.option("--starting-after", help="Pagination token for next page")
+@click.option("--ending-before", help="Pagination token for previous page")
+@click.option("--sort-by", type=click.Choice(["caId"]), help="Field to sort by. Default: caId")
+@click.option("--sort-order", type=click.Choice(["asc", "desc"]), help="Sort order. Default: asc")
+@click.option("--crl-ids", help="Comma-separated list of CRL IDs to filter")
+@click.option("--ca-ids", help="Comma-separated list of CA IDs to filter")
 @click.option("--refresh", is_flag=True, help="Bypass cache")
 @click.option("--raw", is_flag=True, help="Compact JSON output")
-def crls(refresh: bool, raw: bool):
+def crls(per_page: Optional[int], starting_after: Optional[str], ending_before: Optional[str],
+         sort_by: Optional[str], sort_order: Optional[str], crl_ids: Optional[str], ca_ids: Optional[str],
+         refresh: bool, raw: bool):
     """List CRLs."""
     client = get_client()
-    result = client.request("GET", f"/organizations/{ORG_ID}/nac/certificates/authorities/crls", refresh=refresh)
+
+    params = {}
+    if per_page:
+        params["perPage"] = per_page
+    if starting_after:
+        params["startingAfter"] = starting_after
+    if ending_before:
+        params["endingBefore"] = ending_before
+    if sort_by:
+        params["sortBy"] = sort_by
+    if sort_order:
+        params["sortOrder"] = sort_order
+    if crl_ids:
+        params["crlIds"] = crl_ids.split(",")
+    if ca_ids:
+        params["caIds"] = ca_ids.split(",")
+
+    result = client.request("GET", f"/organizations/{ORG_ID}/nac/certificates/authorities/crls",
+                           params=params if params else None, refresh=refresh)
     output_json(result, raw)
 
 
 @cli.command()
+@click.option("--per-page", type=int, help="Entries per page (3-100). Default: 100")
+@click.option("--starting-after", help="Pagination token for next page")
+@click.option("--ending-before", help="Pagination token for previous page")
+@click.option("--sort-by", type=click.Choice(["caId"]), help="Field to sort by. Default: caId")
+@click.option("--sort-order", type=click.Choice(["asc", "desc"]), help="Sort order. Default: asc")
+@click.option("--ca-ids", help="Comma-separated list of CA IDs to filter")
 @click.option("--refresh", is_flag=True, help="Bypass cache")
 @click.option("--raw", is_flag=True, help="Compact JSON output")
-def crl_descriptors(refresh: bool, raw: bool):
+def crl_descriptors(per_page: Optional[int], starting_after: Optional[str], ending_before: Optional[str],
+                    sort_by: Optional[str], sort_order: Optional[str], ca_ids: Optional[str],
+                    refresh: bool, raw: bool):
     """Get CRL metadata."""
     client = get_client()
-    result = client.request("GET", f"/organizations/{ORG_ID}/nac/certificates/authorities/crls/descriptors", refresh=refresh)
+
+    params = {}
+    if per_page:
+        params["perPage"] = per_page
+    if starting_after:
+        params["startingAfter"] = starting_after
+    if ending_before:
+        params["endingBefore"] = ending_before
+    if sort_by:
+        params["sortBy"] = sort_by
+    if sort_order:
+        params["sortOrder"] = sort_order
+    if ca_ids:
+        params["caIds"] = ca_ids.split(",")
+
+    result = client.request("GET", f"/organizations/{ORG_ID}/nac/certificates/authorities/crls/descriptors",
+                           params=params if params else None, refresh=refresh)
     output_json(result, raw)
 
 
@@ -409,12 +521,52 @@ def delete_crl(crl_id: str, raw: bool):
 
 
 @cli.command()
+@click.option("--sort-order", type=click.Choice(["asc", "desc"]), help="Sort direction")
+@click.option("--sort-key", help="Field to sort by (e.g., mac, description, lastLogin)")
+@click.option("--per-page", type=int, help="Entries per page (3-1000). Default: 1000")
+@click.option("--starting-after", help="Pagination token for next page")
+@click.option("--ending-before", help="Pagination token for previous page")
+@click.option("--search", help="Fuzzy search on clients")
+@click.option("--client-ids", help="Comma-separated list of client IDs")
+@click.option("--group-ids", help="Comma-separated list of group IDs")
+@click.option("--last-network-name", help="Comma-separated list of network names")
+@click.option("--ssid", help="Comma-separated list of SSIDs")
+@click.option("--classification", help="Classification filters as JSON")
 @click.option("--refresh", is_flag=True, help="Bypass cache")
 @click.option("--raw", is_flag=True, help="Compact JSON output")
-def clients(refresh: bool, raw: bool):
+def clients(sort_order: Optional[str], sort_key: Optional[str], per_page: Optional[int],
+            starting_after: Optional[str], ending_before: Optional[str], search: Optional[str],
+            client_ids: Optional[str], group_ids: Optional[str], last_network_name: Optional[str],
+            ssid: Optional[str], classification: Optional[str], refresh: bool, raw: bool):
     """List NAC clients."""
     client = get_client()
-    result = client.request("GET", f"/organizations/{ORG_ID}/nac/clients", refresh=refresh)
+
+    params = {}
+    if sort_order:
+        params["sortOrder"] = sort_order
+    if sort_key:
+        params["sortKey"] = sort_key
+    if per_page:
+        params["perPage"] = per_page
+    if starting_after:
+        params["startingAfter"] = starting_after
+    if ending_before:
+        params["endingBefore"] = ending_before
+    if search:
+        params["search"] = search
+    if client_ids:
+        params["clientIds"] = client_ids.split(",")
+    if group_ids:
+        params["groupIds"] = group_ids.split(",")
+    if last_network_name:
+        params["lastNetworkName"] = last_network_name.split(",")
+    if ssid:
+        params["ssid"] = ssid.split(",")
+    if classification:
+        params["classification"] = json.loads(classification)
+
+    result = client.request("GET", f"/organizations/{ORG_ID}/nac/clients",
+                           params=params if params else None, refresh=refresh)
     output_json(result, raw)
 
 
@@ -490,12 +642,39 @@ def bulk_upload_clients(body: str, raw: bool):
 
 
 @cli.command()
+@click.option("--sort-order", type=click.Choice(["asc", "desc"]), help="Sort direction")
+@click.option("--sort-key", help="Field to sort by (e.g., name, description)")
+@click.option("--per-page", type=int, help="Entries per page (3-1000). Default: 1000")
+@click.option("--starting-after", help="Pagination token for next page")
+@click.option("--ending-before", help="Pagination token for previous page")
+@click.option("--search", help="Fuzzy search on client groups")
+@click.option("--group-ids", help="Comma-separated list of group IDs")
 @click.option("--refresh", is_flag=True, help="Bypass cache")
 @click.option("--raw", is_flag=True, help="Compact JSON output")
-def client_groups(refresh: bool, raw: bool):
+def client_groups(sort_order: Optional[str], sort_key: Optional[str], per_page: Optional[int],
+                  starting_after: Optional[str], ending_before: Optional[str], search: Optional[str],
+                  group_ids: Optional[str], refresh: bool, raw: bool):
     """List client groups."""
     client = get_client()
-    result = client.request("GET", f"/organizations/{ORG_ID}/nac/clients/groups", refresh=refresh)
+
+    params = {}
+    if sort_order:
+        params["sortOrder"] = sort_order
+    if sort_key:
+        params["sortKey"] = sort_key
+    if per_page:
+        params["perPage"] = per_page
+    if starting_after:
+        params["startingAfter"] = starting_after
+    if ending_before:
+        params["endingBefore"] = ending_before
+    if search:
+        params["search"] = search
+    if group_ids:
+        params["groupIds"] = group_ids.split(",")
+
+    result = client.request("GET", f"/organizations/{ORG_ID}/nac/clients/groups",
+                           params=params if params else None, refresh=refresh)
     output_json(result, raw)
 
 
@@ -549,24 +728,42 @@ def dictionaries(refresh: bool, raw: bool):
 
 @cli.command()
 @click.argument("dictionary_id")
+@click.option("--network-ids", help="Comma-separated list of network IDs to filter enum values")
 @click.option("--refresh", is_flag=True, help="Bypass cache")
 @click.option("--raw", is_flag=True, help="Compact JSON output")
-def dictionary_attributes(dictionary_id: str, refresh: bool, raw: bool):
+def dictionary_attributes(dictionary_id: str, network_ids: Optional[str], refresh: bool, raw: bool):
     """List dictionary attributes."""
     client = get_client()
-    result = client.request("GET", f"/organizations/{ORG_ID}/nac/dictionaries/{dictionary_id}/attributes", refresh=refresh)
+
+    params = {}
+    if network_ids:
+        params["networkIds"] = network_ids.split(",")
+
+    result = client.request("GET", f"/organizations/{ORG_ID}/nac/dictionaries/{dictionary_id}/attributes",
+                           params=params if params else None, refresh=refresh)
     output_json(result, raw)
 
 
 @cli.command()
 @click.argument("dictionary_id")
 @click.argument("attribute_name")
+@click.option("--search", help="Search string for contains-match filtering")
+@click.option("--network-ids", help="Comma-separated list of network IDs to filter values")
 @click.option("--refresh", is_flag=True, help="Bypass cache")
 @click.option("--raw", is_flag=True, help="Compact JSON output")
-def attribute_values(dictionary_id: str, attribute_name: str, refresh: bool, raw: bool):
+def attribute_values(dictionary_id: str, attribute_name: str, search: Optional[str],
+                    network_ids: Optional[str], refresh: bool, raw: bool):
     """Search attribute values."""
     client = get_client()
-    result = client.request("GET", f"/organizations/{ORG_ID}/nac/dictionaries/{dictionary_id}/attributes/{attribute_name}/values", refresh=refresh)
+
+    params = {}
+    if search:
+        params["search"] = search
+    if network_ids:
+        params["networkIds"] = network_ids.split(",")
+
+    result = client.request("GET", f"/organizations/{ORG_ID}/nac/dictionaries/{dictionary_id}/attributes/{attribute_name}/values",
+                           params=params if params else None, refresh=refresh)
     output_json(result, raw)
 
 
@@ -576,12 +773,26 @@ def attribute_values(dictionary_id: str, attribute_name: str, refresh: bool, raw
 
 
 @cli.command()
+@click.option("--start-date", help="Start date for usage data (UTC, YYYY-MM-DD format)")
+@click.option("--end-date", help="End date for usage data (UTC, YYYY-MM-DD format)")
+@click.option("--network-ids", help="Comma-separated list of network IDs")
 @click.option("--refresh", is_flag=True, help="Bypass cache")
 @click.option("--raw", is_flag=True, help="Compact JSON output")
-def license_usage(refresh: bool, raw: bool):
+def license_usage(start_date: Optional[str], end_date: Optional[str], network_ids: Optional[str],
+                  refresh: bool, raw: bool):
     """Get license usage stats."""
     client = get_client()
-    result = client.request("GET", f"/organizations/{ORG_ID}/nac/license/usage", refresh=refresh)
+
+    params = {}
+    if start_date:
+        params["startDate"] = start_date
+    if end_date:
+        params["endDate"] = end_date
+    if network_ids:
+        params["networkIds"] = network_ids.split(",")
+
+    result = client.request("GET", f"/organizations/{ORG_ID}/nac/license/usage",
+                           params=params if params else None, refresh=refresh)
     output_json(result, raw)
 
 

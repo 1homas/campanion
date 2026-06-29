@@ -47,55 +47,76 @@ campanion/
 
 ### Invocation
 
+The CLI can be executed directly (recommended) or via `uv run`:
+
 ```bash
+# Direct execution (executable script)
+~/AI/skills/campanion/scripts/campanion.py <command> [options]
+
+# Or via uv run
 uv run --directory ~/AI/skills/campanion/scripts campanion.py <command> [options]
 ```
 
-All scripts use uv inline metadata — no virtual environment or `pip install` required.
+The script uses `#!/usr/bin/env -S uv run` shebang with inline PEP 723 metadata — no virtual environment or `pip install` required.
 
 ### Commands
 
-| Command                 | Verb   | Endpoint                                          | Description                  |
-| ----------------------- | ------ | ------------------------------------------------- | ---------------------------- |
-| `sessions`              | GET    | `/nac/sessions/history`                           | List session history         |
-| `session-details`       | GET    | `/nac/sessions/{id}/details`                      | Session detail               |
-| `count-sessions`        | GET    | `/nac/sessions/history` (aggregated)              | Count by status              |
-| `failed-sessions`       | GET    | `/nac/sessions/history` (filtered)                | Failed sessions with reasons |
-| `policies`              | GET    | `/nac/authorization/policies`                     | List auth policies           |
-| `rules`                 | GET    | `/nac/authorization/policies` (filtered)          | List rules for a policy      |
-| `create-rule`           | POST   | `/nac/authorization/policies/{id}/rules`          | Create auth rule             |
-| `update-rule`           | PUT    | `/nac/authorization/policies/{id}/rules/{id}`     | Update auth rule             |
-| `delete-rule`           | DELETE | `/nac/authorization/policies/{id}/rules/{id}`     | Delete auth rule             |
-| `certificates`          | GET    | `/nac/certificates`                               | List certificates            |
-| `certificates-overview` | GET    | `/nac/certificates/overview`                      | Certificate counts           |
-| `import-certificate`    | POST   | `/nac/certificates/import`                        | Import certificate           |
-| `update-certificate`    | PUT    | `/nac/certificates/{id}`                          | Update certificate config    |
-| `crls`                  | GET    | `/nac/certificates/authorities/crls`              | List CRLs                    |
-| `crl-descriptors`       | GET    | `/nac/certificates/authorities/crls/descriptors`  | CRL metadata                 |
-| `create-crl`            | POST   | `/nac/certificates/authorities/crls`              | Create CRL                   |
-| `delete-crl`            | DELETE | `/nac/certificates/authorities/crls/{id}`         | Delete CRL                   |
-| `clients`               | GET    | `/nac/clients`                                    | List NAC clients             |
-| `clients-overview`      | GET    | `/nac/clients/overview`                           | Client counts                |
-| `create-client`         | POST   | `/nac/clients`                                    | Create client                |
-| `update-client`         | PUT    | `/nac/clients/{id}`                               | Update client                |
-| `bulk-delete-clients`   | POST   | `/nac/clients/bulkDelete`                         | Bulk delete                  |
-| `bulk-edit-clients`     | POST   | `/nac/clients/bulkEdit`                           | Bulk edit                    |
-| `bulk-upload-clients`   | POST   | `/nac/clients/bulkUpload`                         | Bulk upload                  |
-| `client-groups`         | GET    | `/nac/clients/groups`                             | List client groups           |
-| `create-client-group`   | POST   | `/nac/clients/groups`                             | Create group                 |
-| `update-client-group`   | PUT    | `/nac/clients/groups/{id}`                        | Update group                 |
-| `delete-client-group`   | DELETE | `/nac/clients/groups/{id}`                        | Delete group                 |
-| `dictionaries`          | GET    | `/nac/dictionaries`                               | List dictionaries            |
-| `dictionary-attributes` | GET    | `/nac/dictionaries/{id}/attributes`               | List attributes              |
-| `attribute-values`      | GET    | `/nac/dictionaries/{id}/attributes/{name}/values` | Search attribute values      |
-| `license-usage`         | GET    | `/nac/license/usage`                              | License usage stats          |
-| `api`                   | ANY    | Any Meraki Dashboard path                         | Generic API call             |
+All GET commands support their respective REST API query parameters for filtering, pagination, sorting, and time ranges.
+
+| Command                 | Verb   | Endpoint                                          | Description                  | Key Query Parameters                                               |
+| ----------------------- | ------ | ------------------------------------------------- | ---------------------------- | ------------------------------------------------------------------ |
+| `sessions`              | GET    | `/nac/sessions/history`                           | List session history         | `--t0`, `--timespan`, `--per-page`, `--starting-after`             |
+| `session-details`       | GET    | `/nac/sessions/{id}/details`                      | Session detail               | —                                                                  |
+| `count-sessions`        | GET    | `/nac/sessions/history` (aggregated)              | Count by status              | `--t0`, `--timespan`                                               |
+| `failed-sessions`       | GET    | `/nac/sessions/history` (filtered)                | Failed sessions with reasons | `--t0`, `--timespan`                                               |
+| `policies`              | GET    | `/nac/authorization/policies`                     | List auth policies           | `--policy-ids`                                                     |
+| `rules`                 | GET    | `/nac/authorization/policies` (filtered)          | List rules for a policy      | —                                                                  |
+| `create-rule`           | POST   | `/nac/authorization/policies/{id}/rules`          | Create auth rule             | —                                                                  |
+| `update-rule`           | PUT    | `/nac/authorization/policies/{id}/rules/{id}`     | Update auth rule             | —                                                                  |
+| `delete-rule`           | DELETE | `/nac/authorization/policies/{id}/rules/{id}`     | Delete auth rule             | —                                                                  |
+| `certificates`          | GET    | `/nac/certificates`                               | List certificates            | `--status`, `--expiry`, `--last-used`                              |
+| `certificates-overview` | GET    | `/nac/certificates/overview`                      | Certificate counts           | —                                                                  |
+| `import-certificate`    | POST   | `/nac/certificates/import`                        | Import certificate           | —                                                                  |
+| `update-certificate`    | PUT    | `/nac/certificates/{id}`                          | Update certificate config    | —                                                                  |
+| `crls`                  | GET    | `/nac/certificates/authorities/crls`              | List CRLs                    | `--per-page`, `--sort-by`, `--sort-order`, `--crl-ids`, `--ca-ids` |
+| `crl-descriptors`       | GET    | `/nac/certificates/authorities/crls/descriptors`  | CRL metadata                 | `--per-page`, `--sort-by`, `--sort-order`, `--ca-ids`              |
+| `create-crl`            | POST   | `/nac/certificates/authorities/crls`              | Create CRL                   | —                                                                  |
+| `delete-crl`            | DELETE | `/nac/certificates/authorities/crls/{id}`         | Delete CRL                   | —                                                                  |
+| `clients`               | GET    | `/nac/clients`                                    | List NAC clients             | `--search`, `--sort-key`, `--client-ids`, `--group-ids`, `--ssid`  |
+| `clients-overview`      | GET    | `/nac/clients/overview`                           | Client counts                | —                                                                  |
+| `create-client`         | POST   | `/nac/clients`                                    | Create client                | —                                                                  |
+| `update-client`         | PUT    | `/nac/clients/{id}`                               | Update client                | —                                                                  |
+| `bulk-delete-clients`   | POST   | `/nac/clients/bulkDelete`                         | Bulk delete                  | —                                                                  |
+| `bulk-edit-clients`     | POST   | `/nac/clients/bulkEdit`                           | Bulk edit                    | —                                                                  |
+| `bulk-upload-clients`   | POST   | `/nac/clients/bulkUpload`                         | Bulk upload                  | —                                                                  |
+| `client-groups`         | GET    | `/nac/clients/groups`                             | List client groups           | `--search`, `--sort-key`, `--group-ids`, `--per-page`              |
+| `create-client-group`   | POST   | `/nac/clients/groups`                             | Create group                 | —                                                                  |
+| `update-client-group`   | PUT    | `/nac/clients/groups/{id}`                        | Update group                 | —                                                                  |
+| `delete-client-group`   | DELETE | `/nac/clients/groups/{id}`                        | Delete group                 | —                                                                  |
+| `dictionaries`          | GET    | `/nac/dictionaries`                               | List dictionaries            | —                                                                  |
+| `dictionary-attributes` | GET    | `/nac/dictionaries/{id}/attributes`               | List attributes              | `--network-ids`                                                    |
+| `attribute-values`      | GET    | `/nac/dictionaries/{id}/attributes/{name}/values` | Search attribute values      | `--search`, `--network-ids`                                        |
+| `license-usage`         | GET    | `/nac/license/usage`                              | License usage stats          | `--start-date`, `--end-date`, `--network-ids`                      |
+| `api`                   | ANY    | Any Meraki Dashboard path                         | Generic API call             | `--params`, `--body`                                               |
 
 ### Global Options
 
-| Flag    | Description                          |
-| ------- | ------------------------------------ |
-| `--raw` | Compact JSON output (no indentation) |
+Most GET commands support:
+
+| Flag               | Description                                                |
+| ------------------ | ---------------------------------------------------------- |
+| `--refresh`        | Bypass cache for GET requests                              |
+| `--raw`            | Compact JSON output (no indentation)                       |
+| `--per-page`       | Results per page (varies by endpoint: 3-1000)              |
+| `--starting-after` | Pagination token for next page                             |
+| `--ending-before`  | Pagination token for previous page                         |
+| `--sort-order`     | Sort direction (`asc` or `desc`)                           |
+| `--sort-key`       | Field to sort by (varies by endpoint)                      |
+| `--search`         | Fuzzy search string (clients, groups, attribute values)    |
+| `--t0`             | Start time (ISO8601 or Unix timestamp, sessions only)      |
+| `--timespan`       | Duration in seconds (max 2678400 = 31 days, sessions only) |
+
+Refer to `<command> --help` for endpoint-specific options.
 
 ### Caching
 
