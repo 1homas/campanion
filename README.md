@@ -1,15 +1,26 @@
 # CAMpanion
 
-Cisco Access Manager (CAM) companion CLI for operational management via Meraki Dashboard REST APIs.
+A Claude Code skill providing operational management of Cisco Access Manager (CAM) via Meraki Dashboard REST APIs. Using CLI commands is more efficient than an MCP server when performing REST API operations.
 
 ## Features
 
+- **Claude Code Skill**: Invocable via `/campanion` to analyze, correlate, configure, and troubleshoot CAM deployments
 - **NAC Operations**: Manage sessions, policies, certificates, clients, and groups
 - **Meraki Dashboard Correlation**: Query networks, devices, switch ports via generic API command
 - **Smart Caching**: 7-day cache for GET requests with auto-invalidation on writes
 - **Zero Setup**: Uses uv inline metadata — no venv or `pip install` needed
 
 ## Quick Start
+
+### As a Skill
+
+```bash
+/campanion
+```
+
+The skill triggers automatically when Claude Code detects questions about CAM, Meraki NAC, authentication sessions, authorization policies, certificates, clients/endpoints, or license usage.
+
+### As a CLI
 
 1. **Set up credentials**:
 

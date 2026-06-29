@@ -1,8 +1,12 @@
 # CLAUDE.md
 
+## Overview
+
+This is a Claude Code skill providing operational management of Cisco Access Manager (CAM) via Meraki Dashboard REST APIs.
+
 ## Specification
 
-See `references/campanion.md` for the full project specification including architecture, scope, and design decisions.
+See `references/specs.md` for the full project specification including architecture, scope, and design decisions.
 
 ## API Reference
 
@@ -12,32 +16,55 @@ See `references/campanion.md` for the full project specification including archi
 
 ### API Endpoints
 
-| Category      | Endpoints                                                           | Methods     |
-| ------------- | ------------------------------------------------------------------- | ----------- |
-| Authorization | `/organizations/{orgId}/nac/authorization/policies`                 | GET         |
-|               | `.../policies/{policyId}/rules`                                     | POST        |
-|               | `.../policies/{policyId}/rules/{ruleId}`                            | PUT, DELETE |
-| Certificates  | `/organizations/{orgId}/nac/certificates`                           | GET         |
-|               | `.../certificates/{certificateId}`                                  | PUT         |
-|               | `.../certificates/import`                                           | POST        |
-|               | `.../certificates/overview`                                         | GET         |
-|               | `.../certificates/authorities/crls`                                 | GET, POST   |
-|               | `.../certificates/authorities/crls/descriptors`                     | GET         |
-|               | `.../certificates/authorities/crls/{crlId}`                         | DELETE      |
-| Clients       | `/organizations/{orgId}/nac/clients`                                | GET, POST   |
-|               | `.../clients/{clientId}`                                            | PUT         |
-|               | `.../clients/bulkDelete`                                            | POST        |
-|               | `.../clients/bulkEdit`                                              | POST        |
-|               | `.../clients/bulkUpload`                                            | POST        |
-|               | `.../clients/overview`                                              | GET         |
-| Groups        | `/organizations/{orgId}/nac/clients/groups`                         | GET, POST   |
-|               | `.../clients/groups/{groupId}`                                      | PUT, DELETE |
-| Dictionaries  | `/organizations/{orgId}/nac/dictionaries`                           | GET         |
-|               | `.../dictionaries/{dictionaryId}/attributes`                        | GET         |
-|               | `.../dictionaries/{dictionaryId}/attributes/{attributeName}/values` | GET         |
-| License       | `/organizations/{orgId}/nac/license/usage`                          | GET         |
-| Sessions      | `/organizations/{orgId}/nac/sessions/history`                       | GET         |
-|               | `.../sessions/{sessionId}/details`                                  | GET         |
+| Category      | Endpoints                                                                                          | Methods     |
+| ------------- | -------------------------------------------------------------------------------------------------- | ----------- |
+| Authorization | `/organizations/{orgId}/nac/authorization/policies`                                                | GET         |
+|               | `/organizations/{orgId}/nac/authorization/policies/{policyId}/rules`                               | POST        |
+|               | `/organizations/{orgId}/nac/authorization/policies/{policyId}/rules/{ruleId}`                      | PUT, DELETE |
+| Certificates  | `/organizations/{orgId}/nac/certificates`                                                          | GET         |
+|               | `/organizations/{orgId}/nac/certificates/{certificateId}`                                          | PUT         |
+|               | `/organizations/{orgId}/nac/certificates/import`                                                   | POST        |
+|               | `/organizations/{orgId}/nac/certificates/overview`                                                 | GET         |
+|               | `/organizations/{orgId}/nac/certificates/authorities/crls`                                         | GET, POST   |
+|               | `/organizations/{orgId}/nac/certificates/authorities/crls/descriptors`                             | GET         |
+|               | `/organizations/{orgId}/nac/certificates/authorities/crls/{crlId}`                                 | DELETE      |
+| Clients       | `/organizations/{orgId}/nac/clients`                                                               | GET, POST   |
+|               | `/organizations/{orgId}/nac/clients/{clientId}`                                                    | PUT         |
+|               | `/organizations/{orgId}/nac/clients/bulkDelete`                                                    | POST        |
+|               | `/organizations/{orgId}/nac/clients/bulkEdit`                                                      | POST        |
+|               | `/organizations/{orgId}/nac/clients/bulkUpload`                                                    | POST        |
+|               | `/organizations/{orgId}/nac/clients/overview`                                                      | GET         |
+| Groups        | `/organizations/{orgId}/nac/clients/groups`                                                        | GET, POST   |
+|               | `/organizations/{orgId}/nac/clients/groups/{groupId}`                                              | PUT, DELETE |
+| Dictionaries  | `/organizations/{orgId}/nac/dictionaries`                                                          | GET         |
+|               | `/organizations/{orgId}/nac/dictionaries/{dictionaryId}/attributes`                                | GET         |
+|               | `/organizations/{orgId}/nac/dictionaries/{dictionaryId}/attributes/{attributeName}/values`         | GET         |
+| License       | `/organizations/{orgId}/nac/license/usage`                                                         | GET         |
+| Sessions      | `/organizations/{orgId}/nac/sessions/history`                                                      | GET         |
+|               | `/organizations/{orgId}/nac/sessions/{sessionId}/details`                                          | GET         |
+
+## Setup
+
+### Install uv
+
+This project uses `uv` for Python package management. Install it if not already available:
+
+```bash
+# macOS/Linux
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# Or via Homebrew (macOS)
+brew install uv
+
+# Or via pip
+pip install uv
+```
+
+Verify installation:
+
+```bash
+uv --version
+```
 
 ## Running Scripts
 
@@ -75,6 +102,7 @@ uv run --directory ~/AI/skills/campanion/scripts campanion.py api PUT /devices/Q
 ## Packages
 
 Use Python packages:
+
 - httpx
 - pyyaml
 - asyncio

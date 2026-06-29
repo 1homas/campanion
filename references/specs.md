@@ -2,7 +2,7 @@
 
 ## Purpose
 
-A Claude Code skill and CLI tool for operational management of Cisco Access Manager (CAM) via the Meraki Dashboard REST APIs. Provides read/write access to NAC-specific endpoints (sessions, policies, certificates, clients, dictionaries, licensing) and read-only correlation via the generic Meraki Dashboard API (networks, devices, switch ports).
+A Claude Code skill for operational management of Cisco Access Manager (CAM) via the Meraki Dashboard REST APIs. Provides both an agent-invocable skill interface and a standalone CLI for read/write access to NAC-specific endpoints (sessions, policies, certificates, clients, dictionaries, licensing) and correlation via the generic Meraki Dashboard API (networks, devices, switch ports).
 
 ## Scope
 
@@ -23,19 +23,25 @@ A Claude Code skill and CLI tool for operational management of Cisco Access Mana
 
 ```
 campanion/
+├── SKILL.md                # Skill frontmatter + agent instructions
 ├── scripts/
 │   └── campanion.py        # Main CLI (Click, httpx, uv inline deps)
 ├── tests/
 │   └── test_campanion.py   # Unit tests (pytest, respx mocks)
 ├── assets/                 # CAM/Meraki product documentation (markdown)
 ├── references/
+│   ├── specs.md            # This specification
 │   └── meraki_openapi_v3.json  # Meraki Dashboard OpenAPI 3.0 spec
 ├── .cache/                 # API response cache (gitignored)
 ├── .env                    # Credentials (gitignored)
-├── SKILL.md                # Skill frontmatter + CLI reference
 ├── CLAUDE.md               # Claude Code project instructions
 └── README.md               # Human-readable project documentation
 ```
+
+### Skill vs CLI
+
+- **Skill** (`SKILL.md`): Agent-invocable via `/campanion` — automatically triggers on CAM-related queries
+- **CLI** (`campanion.py`): Direct command-line tool for scripting and manual operations
 
 ## CLI Design
 
@@ -135,7 +141,19 @@ Testing:
 - Python 3.11+ required
 - Auth via `X-Cisco-Meraki-API-Key` header (not Bearer token)
 - `{organizationId}` auto-substituted in the `api` command; all other path params must be literal
-- The skill triggers on queries about CAM, Meraki NAC, authentication sessions, authorization policies, certificates, clients/endpoints, or license usage
+
+## Skill Trigger
+
+The skill automatically activates when Claude Code detects questions or tasks related to:
+
+- Cisco Access Manager (CAM) features, configuration, or troubleshooting
+- Meraki NAC operations
+- Authentication sessions or session history
+- Authorization policies or policy rules
+- Certificates, CRLs, or certificate authorities
+- NAC clients, endpoints, or client groups
+- NAC license usage or licensing
+- Correlating NAC data with Meraki Dashboard (networks, devices, switch ports)
 
 ## Use Cases
 
@@ -151,7 +169,7 @@ Testing:
 When displaying authorization policies in table format, use this column order:
 
 | Rank | Rule Name | Conditions | Authorization |
-|------|-----------|------------|---------------|
+| ---- | --------- | ---------- | ------------- |
 
 - **Rank**: Rule priority (0-based, lower executes first)
 - **Rule Name**: Descriptive name for the rule

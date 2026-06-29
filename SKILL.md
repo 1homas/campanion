@@ -1,22 +1,38 @@
 ---
 name: campanion
-description: Use the Cisco Access Manager (CAM) documentation and Meraki Dashboard APIs and the `/nac/` APIs specifically to analyze, correlate, configure, and troubleshoot users, devices, clients/endpoints, authentications/sessions or answer general feature availability, capability, configuration, and integration questions
+description: Use the Cisco Access Manager (CAM) Meraki Dashboard APIs and the `/nac/` APIs specifically via CLI commands to analyze, correlate, configure, and troubleshoot users, devices, clients/endpoints, authentications/sessions or answer general feature availability, capability, configuration, and integration questions
 argument-hint: "<QUERY> [--source <dir>] [--verbose] [--output <file>]"
-version: 0.1.0
+version: 0.2.0
 license: "[MIT](https://mit-license.org)"
 ---
 
 # campanion
 
-Cisco Access Manager (CAM) companion uses the Meraki Dashboard APIs for configuration, operations, analytics, and troubleshooting.
+A Claude Code skill for Cisco Access Manager (CAM) operational management using the Meraki Dashboard APIs for configuration, operations, analytics, and troubleshooting.
 
-Use Cases:
+## Skill Interface
+
+Invoke via `/campanion` or let Claude Code automatically trigger when detecting CAM-related questions.
+
+The skill automatically activates for questions about:
+
+- Cisco Access Manager (CAM) features, configuration, troubleshooting
+- Meraki NAC operations
+- Authentication sessions or session history
+- Authorization policies or rules
+- Certificates, CRLs, or certificate authorities
+- NAC clients, endpoints, or client groups
+- NAC license usage
+
+## Use Cases
 
 - **Troubleshooting**: Query session history and details to diagnose authentication failures
 - **Configuration**: Manage authorization policies, rules, certificates, and CRLs
 - **Analytics**: Pull license usage, session data, and certificate overview
 - **Compliance**: Review certificate authorities and CRL status
 - **Correlation**: Use `api` command to query networks, devices, clients, and other Meraki Dashboard resources for context alongside NAC data
+
+## CLI Interface
 
 ```bash
 uv run --directory ~/AI/skills/campanion/scripts campanion.py <command> [options]
