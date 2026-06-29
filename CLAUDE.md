@@ -16,32 +16,32 @@ See `references/specs.md` for the full project specification including architect
 
 ### API Endpoints
 
-| Category      | Endpoints                                                           | Methods     |
-| ------------- | ------------------------------------------------------------------- | ----------- |
-| Authorization | `/nac/authorization/policies`                                       | GET         |
-|               | `/nac/authorization/policies/{policyId}/rules`                      | POST        |
-|               | `/nac/authorization/policies/{policyId}/rules/{ruleId}`             | PUT, DELETE |
-| Certificates  | `/nac/certificates`                                                 | GET         |
-|               | `/nac/certificates/{certificateId}`                                 | PUT         |
-|               | `/nac/certificates/import`                                          | POST        |
-|               | `/nac/certificates/overview`                                        | GET         |
-|               | `/nac/certificates/authorities/crls`                                | GET, POST   |
-|               | `/nac/certificates/authorities/crls/descriptors`                    | GET         |
-|               | `/nac/certificates/authorities/crls/{crlId}`                        | DELETE      |
-| Clients       | `/nac/clients`                                                      | GET, POST   |
-|               | `/nac/clients/{clientId}`                                           | PUT         |
-|               | `/nac/clients/bulkDelete`                                           | POST        |
-|               | `/nac/clients/bulkEdit`                                             | POST        |
-|               | `/nac/clients/bulkUpload`                                           | POST        |
-|               | `/nac/clients/overview`                                             | GET         |
-| Groups        | `/nac/clients/groups`                                               | GET, POST   |
-|               | `/nac/clients/groups/{groupId}`                                     | PUT, DELETE |
-| Dictionaries  | `/nac/dictionaries`                                                 | GET         |
-|               | `/nac/dictionaries/{dictionaryId}/attributes`                       | GET         |
+| Category      | Endpoints                                                            | Methods     |
+| ------------- | -------------------------------------------------------------------- | ----------- |
+| Authorization | `/nac/authorization/policies`                                        | GET         |
+|               | `/nac/authorization/policies/{policyId}/rules`                       | POST        |
+|               | `/nac/authorization/policies/{policyId}/rules/{ruleId}`              | PUT, DELETE |
+| Certificates  | `/nac/certificates`                                                  | GET         |
+|               | `/nac/certificates/{certificateId}`                                  | PUT         |
+|               | `/nac/certificates/import`                                           | POST        |
+|               | `/nac/certificates/overview`                                         | GET         |
+|               | `/nac/certificates/authorities/crls`                                 | GET, POST   |
+|               | `/nac/certificates/authorities/crls/descriptors`                     | GET         |
+|               | `/nac/certificates/authorities/crls/{crlId}`                         | DELETE      |
+| Clients       | `/nac/clients`                                                       | GET, POST   |
+|               | `/nac/clients/{clientId}`                                            | PUT         |
+|               | `/nac/clients/bulkDelete`                                            | POST        |
+|               | `/nac/clients/bulkEdit`                                              | POST        |
+|               | `/nac/clients/bulkUpload`                                            | POST        |
+|               | `/nac/clients/overview`                                              | GET         |
+| Groups        | `/nac/clients/groups`                                                | GET, POST   |
+|               | `/nac/clients/groups/{groupId}`                                      | PUT, DELETE |
+| Dictionaries  | `/nac/dictionaries`                                                  | GET         |
+|               | `/nac/dictionaries/{dictionaryId}/attributes`                        | GET         |
 |               | `/nac/dictionaries/{dictionaryId}/attributes/{attributeName}/values` | GET         |
-| License       | `/nac/license/usage`                                                | GET         |
-| Sessions      | `/nac/sessions/history`                                             | GET         |
-|               | `/nac/sessions/{sessionId}/details`                                 | GET         |
+| License       | `/nac/license/usage`                                                 | GET         |
+| Sessions      | `/nac/sessions/history`                                              | GET         |
+|               | `/nac/sessions/{sessionId}/details`                                  | GET         |
 
 ## Setup
 
